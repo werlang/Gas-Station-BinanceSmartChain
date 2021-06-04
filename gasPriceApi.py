@@ -17,7 +17,7 @@ from retry import retry
 web3 = Web3(HTTPProvider('https://bsc-dataseed2.binance.org'))
 ### These are the threholds used for % blocks accepting to define the recommended gas prices. can be edited here if desired
 
-app = Sanic()
+app = Sanic(name='bsc_gas_oracle')
 log = logging.getLogger('sanic.error')
 app.config.LOGO = ''
 stats = {}
@@ -55,14 +55,14 @@ class CleanTx():
     def round_gp_10gwei(self):
         """Rounds the gas price to gwei"""
         gp = self.gas_price/1e8
-        if gp >= 1 and gp < 10:
-            gp = np.floor(gp)
-        elif gp >= 10:
-            gp = gp/10
-            gp = np.floor(gp)
-            gp = gp*10
-        else:
-            gp = 0
+        # if gp >= 1 and gp < 10:
+        #     gp = np.floor(gp)
+        # elif gp >= 10:
+        #     gp = gp/10
+        #     gp = np.floor(gp)
+        #     gp = gp*10
+        # else:
+        #     gp = 0
         self.gp_10gwei = gp
 
 class CleanBlock():
@@ -140,7 +140,7 @@ def get_hpa(gasprice, hashpower):
     return int(hpa)
 
 def analyze_last200blocks(block, blockdata):
-    recent_blocks = blockdata.loc[blockdata['block_number'] > (block-200), ['mingasprice', 'block_number']]
+    recent_blocks = blockdata.loc[blockdata['block_number'] > (block-200), ['mingasprice', 'block_number', 'time_mined']]
     #create hashpower accepting dataframe based on mingasprice accepted in block
     hashpower = recent_blocks.groupby('mingasprice').count()
     hashpower = hashpower.rename(columns={'block_number': 'count'})
@@ -150,7 +150,7 @@ def analyze_last200blocks(block, blockdata):
     #get avg blockinterval time
     blockinterval = recent_blocks.sort_values('block_number').diff()
     blockinterval.loc[blockinterval['block_number'] > 1, 'time_mined'] = np.nan
-    blockinterval.loc[blockinterval['time_mined']< 0, 'time_mined'] = np.nan
+    blockinterval.loc[blockinterval['time_mined'] < 0, 'time_mined'] = np.nan
     avg_timemined = blockinterval['time_mined'].mean()
     if np.isnan(avg_timemined):
         avg_timemined = 15
@@ -160,8 +160,8 @@ def analyze_last200blocks(block, blockdata):
 def make_predictTable(block, alltx, hashpower, avg_timemined):
 
     #predictiontable
-    predictTable = pd.DataFrame({'gasprice' :  range(10, 1010, 10)})
-    ptable2 = pd.DataFrame({'gasprice' : range(0, 10, 1)})
+    predictTable = pd.DataFrame({'gasprice' :  range(100, 1010, 10)})
+    ptable2 = pd.DataFrame({'gasprice' : range(0, 100, 1)})
     predictTable = predictTable.append(ptable2).reset_index(drop=True)
     predictTable = predictTable.sort_values('gasprice').reset_index(drop=True)
     predictTable['hashpower_accepting'] = predictTable['gasprice'].apply(get_hpa, args=(hashpower,))
@@ -209,9 +209,10 @@ def master_control():
         print ("Standard= " +str(STANDARD)+ "% of blocks accepting. Usually confirms in less than 5 min.")
         print ("Fast = " +str(FAST)+ "% of blocks accepting.  Usually confirms in less than 1 minute")
         print ("Fastest = all blocks accepting.  As fast as possible but you are probably overpaying.")
-        print("\nnow loading gasprice data from last 100 blocks...give me a minute")
+        print("\nnow loading gasprice data from last 50 blocks...give me a minute")
 
-        for pastblock in range((block-100), (block), 1):
+        # start a little early with 50 past blocks
+        for pastblock in range((block-50), (block), 1):
             (mined_blockdf, block_obj) = process_block_transactions(pastblock)
             alltx = alltx.combine_first(mined_blockdf)
             block_sumdf = process_block_data(mined_blockdf, block_obj)
@@ -248,6 +249,16 @@ def master_control():
             #add block data to block dataframe 
             blockdata = blockdata.append(block_sumdf, ignore_index = True)
 
+            # slice blockdata to 200 last blocks to avoid growing memory consumption
+            blockdata = blockdata.iloc[-200:,:]
+            # with open('blockdata.json', 'w') as outfile:
+            #     import json
+            #     j = blockdata.to_json(orient='split')
+            #     p = json.loads(j)
+            #     t = json.dumps(p)
+            #     outfile.write(str(t))
+
+
             #get hashpower table from last 200 blocks
             (hashpower, block_time) = analyze_last200blocks(block, blockdata)
             predictiondf = make_predictTable(block, alltx, hashpower, block_time)
@@ -257,7 +268,7 @@ def master_control():
             print(stats)
 
             #every block, write gprecs, predictions    
-            # write_to_json(stats, predictiondf)
+            write_to_json(stats, predictiondf)
             return True
 
         except: 
@@ -274,7 +285,10 @@ def master_control():
             block = web3.eth.blockNumber
             if (timer.process_block < block):
                 updated = update_dataframes(timer.process_block)
-                timer.process_block = timer.process_block + 1    
+                timer.process_block = timer.process_block + 1
+            else:
+                # rest a little more if there are no blocks available
+                time.sleep(10)
         except:
             pass
 
@@ -282,6 +296,10 @@ def master_control():
 
 @app.route('/')
 async def api(request):
+    if len(stats) == 0:
+        import json
+        data = json.load(open('ethgasAPI.json'))
+        return response.json(data)
     return response.json(stats)
     
 
