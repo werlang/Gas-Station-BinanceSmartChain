@@ -1,0 +1,11 @@
+Install:
+- pip
+- pip3
+- python3
+- python3-devel
+
+For generating requirements.txt
+-pipreqs
+
+Install dependencies:
+pip3 install -r requirements.txt
