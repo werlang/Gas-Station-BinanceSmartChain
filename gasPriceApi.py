@@ -7,6 +7,7 @@ import os
 import pandas as pd
 import numpy as np
 from web3 import Web3, HTTPProvider
+from web3.middleware import geth_poa_middleware
 ## newly added packages for api
 import click
 import logging
@@ -16,6 +17,8 @@ from retry import retry
 
 web3 = Web3(HTTPProvider('https://bsc-dataseed2.binance.org'))
 ### These are the threholds used for % blocks accepting to define the recommended gas prices. can be edited here if desired
+
+web3.middleware_onion.inject(geth_poa_middleware, layer=0)
 
 app = Sanic(name='bsc_gas_oracle')
 log = logging.getLogger('sanic.error')
