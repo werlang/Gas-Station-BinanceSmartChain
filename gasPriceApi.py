@@ -14,7 +14,7 @@ from threading import Thread
 from sanic import Sanic, response
 from retry import retry
 
-web3 = Web3(HTTPProvider('https://bsc-dataseed2.binance.org'))
+web3 = Web3(HTTPProvider('https://bsc-dataseed.binance.org'))
 ### These are the threholds used for % blocks accepting to define the recommended gas prices. can be edited here if desired
 
 app = Sanic(name='bsc_gas_oracle')
@@ -298,8 +298,9 @@ def master_control():
 async def api(request):
     if len(stats) == 0:
         import json
-        data = json.load(open('ethgasAPI.json'))
-        return response.json(data)
+        with open('ethgasAPI.json') as file:
+            data = json.load(file)
+            return response.json(data)
     return response.json(stats)
     
 
